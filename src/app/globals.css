@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-white text-ink-900 antialiased;
+  font-feature-settings: "ss01", "cv11";
+}
+
+::selection {
+  @apply bg-ink-900 text-white;
+}
+
+.scroll-fade {
+  mask-image: linear-gradient(to bottom, black 92%, transparent);
+}
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+textarea:focus-visible,
+[role="option"]:focus-visible {
+  @apply outline-none ring-2 ring-ink-900/15 ring-offset-0;
+}
+
+.hairline {
+  @apply border border-ink-100;
+}
+
+.kbd {
+  @apply inline-flex h-5 min-w-[1.25rem] items-center justify-center rounded border border-ink-200 bg-ink-50 px-1 text-[10px] font-medium text-ink-500;
+}
