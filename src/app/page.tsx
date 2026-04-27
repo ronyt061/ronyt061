@@ -3,6 +3,6 @@ import { getSession } from "@/lib/auth";
 
 export default async function Home() {
   const user = await getSession();
-  if (user) redirect("/inbox");
+  if (user) redirect("/dashboard");
   redirect("/login");
 }

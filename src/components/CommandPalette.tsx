@@ -3,13 +3,17 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, usePathname } from "next/navigation";
 import {
+  AlertTriangle,
   ArrowRight,
-  Box,
+  BookOpenText,
   CheckCircle2,
+  Frown,
   Inbox,
+  LayoutGrid,
   type LucideIcon,
   RotateCcw,
   Search,
+  Settings,
   UserCheck
 } from "lucide-react";
 import type { TicketRow } from "@/lib/types";
@@ -50,28 +54,22 @@ export function CommandPalette({
   useEffect(() => {
     if (!open) return;
     const ctrl = new AbortController();
-    const url = `/api/tickets?status=open&scope=all${query ? `&q=${encodeURIComponent(query)}` : ""}`;
+    const url = `/api/tickets?view=all${query ? `&q=${encodeURIComponent(query)}` : ""}`;
     fetch(url, { signal: ctrl.signal })
       .then((r) => (r.ok ? r.json() : { tickets: [] }))
-      .then((d) => setTickets(d.tickets || []))
+      .then((d) => setTickets((d.tickets || []).slice(0, 10)))
       .catch(() => {});
     return () => ctrl.abort();
   }, [open, query]);
 
   const navActions: Action[] = useMemo(
     () => [
-      {
-        id: "go-inbox",
-        label: "Go to Inbox",
-        icon: Inbox,
-        perform: () => router.push("/inbox")
-      },
-      {
-        id: "go-assets",
-        label: "Go to Assets",
-        icon: Box,
-        perform: () => router.push("/assets")
-      }
+      { id: "go-dashboard", label: "Go to Dashboard", icon: LayoutGrid, perform: () => router.push("/dashboard") },
+      { id: "go-inbox", label: "Go to Inbox", icon: Inbox, perform: () => router.push("/inbox") },
+      { id: "go-breaching", label: "Show breaching SLA", icon: AlertTriangle, perform: () => router.push("/inbox?view=breaching") },
+      { id: "go-negative", label: "Show negative sentiment", icon: Frown, perform: () => router.push("/inbox?view=negative") },
+      { id: "go-kb", label: "Go to Knowledge Base", icon: BookOpenText, perform: () => router.push("/kb") },
+      { id: "go-settings", label: "Go to Settings", icon: Settings, perform: () => router.push("/settings") }
     ],
     [router]
   );
@@ -79,24 +77,9 @@ export function CommandPalette({
   const ticketActions: Action[] = useMemo(() => {
     if (!ticketNumber) return [];
     return [
-      {
-        id: "resolve",
-        label: "Resolve this ticket",
-        icon: CheckCircle2,
-        perform: () => updateTicketByNumber(ticketNumber, { status: "resolved" }, router)
-      },
-      {
-        id: "reopen",
-        label: "Reopen this ticket",
-        icon: RotateCcw,
-        perform: () => updateTicketByNumber(ticketNumber, { status: "open" }, router)
-      },
-      {
-        id: "pending",
-        label: "Mark this ticket pending",
-        icon: ArrowRight,
-        perform: () => updateTicketByNumber(ticketNumber, { status: "pending" }, router)
-      },
+      { id: "resolve", label: "Resolve this ticket", icon: CheckCircle2, perform: () => updateTicketByNumber(ticketNumber, { status: "resolved" }, router) },
+      { id: "reopen", label: "Reopen this ticket", icon: RotateCcw, perform: () => updateTicketByNumber(ticketNumber, { status: "open" }, router) },
+      { id: "pending", label: "Mark this ticket pending", icon: ArrowRight, perform: () => updateTicketByNumber(ticketNumber, { status: "pending" }, router) },
       {
         id: "assign-me",
         label: "Assign this ticket to me",
@@ -105,6 +88,12 @@ export function CommandPalette({
           const me = await fetch("/api/auth/me").then((r) => r.json());
           if (me.user) await updateTicketByNumber(ticketNumber, { assignee_id: me.user.id }, router);
         }
+      },
+      {
+        id: "escalate",
+        label: "Escalate priority to urgent",
+        icon: AlertTriangle,
+        perform: () => updateTicketByNumber(ticketNumber, { priority: "urgent" }, router)
       }
     ];
   }, [ticketNumber, router]);
@@ -186,7 +175,7 @@ export function CommandPalette({
                   <span className="font-mono text-[11px] text-ink-400">#{t.number}</span>
                   <span className="ml-2 truncate text-sm text-ink-900">{t.subject}</span>
                   <span className="ml-auto truncate text-xs text-ink-400">
-                    {t.contact_name || t.contact_email}
+                    {t.account_name || t.contact_name || t.contact_email}
                   </span>
                 </Row>
               ))}

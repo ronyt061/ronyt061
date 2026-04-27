@@ -1,151 +1,132 @@
-# Lume
+# Supportbench-style helpdesk
 
-A minimalist ticketing & customer-support app. The core power of a Zoho
-Desk; a UI that feels like a basic email inbox.
+A B2B-flavoured customer-support / ticketing app. Three-panel agent
+workspace, Customer 360 sidebar, dynamic SLA timers, sentiment +
+complexity scoring, KPI dashboard, knowledge base, teams.
 
-## Design philosophy
-
-- **Minimalist dashboard** — the inbox shows only what needs attention.
-- **Progressive disclosure** — properties, asset linking, and tags live
-  in a side panel that's collapsed by default and never blocks the
-  conversation.
-- **Low cognitive load** — colour-coded status dots (amber = open,
-  sky = pending, emerald = resolved, red = overdue) and one universal
-  icon per concept.
-- **Keyboard-first** — `⌘K` / `Ctrl K` opens a command palette for
-  search, navigation, and per-ticket actions.
-- **Invisible AI** — auto-tagging happens silently on intake; "Magic
-  Draft" is a single icon that drops a draft into the composer.
+The product evolved from an earlier minimalist build (`Lume`); the
+foundations — Next.js + SQLite + JWT auth + intake webhooks — are
+preserved, and the UX is rebuilt around the SupportBench mental model.
 
 ## Stack
 
-- **Frontend**: Next.js 14 (App Router), React, TypeScript, Tailwind CSS,
-  Lucide icons. A small in-repo `components/ui/*` layer mirrors the
-  Shadcn UI API without a CLI scaffold.
-- **Backend**: Next.js route handlers (Node.js). All business logic
-  lives in `src/lib/repo/*` so it can be lifted into an Express/NestJS
-  service without changes.
-- **Database**: SQLite (`better-sqlite3`) for zero-config demo. Schema is
-  written with portable SQL and maps 1:1 to PostgreSQL — see
-  [Switching to PostgreSQL](#switching-to-postgresql).
-- **Auth**: email + password with a JWT (`jose`) in an httpOnly cookie.
-  OAuth 2.0 is wired conceptually — a callback route can mint the same
-  JWT.
-- **AI**: provider-agnostic. If `ANTHROPIC_API_KEY` is set, Magic Draft
-  calls Claude; otherwise a deterministic local heuristic produces a
-  useful draft. Auto-tagging is a rule-based silent pass on intake.
+- **Next.js 14 (App Router) + TypeScript** for the full-stack app.
+- **Tailwind + Lucide** for UI; small in-repo `components/ui/*` layer
+  modeled on Shadcn.
+- **SQLite via `better-sqlite3`** for zero-config demo. The schema
+  uses portable SQL and maps to PostgreSQL with one driver swap.
+- **JWT cookie sessions (`jose`) + bcrypt** for auth.
+- **AI provider-agnostic**: when `ANTHROPIC_API_KEY` is set, draft /
+  summarize / intent / sentiment go through Claude; otherwise a
+  deterministic local fallback keeps the demo offline-capable.
 
 ## Run it
 
 ```bash
 npm install
-cp .env.example .env       # set AUTH_SECRET to anything for local dev
-npm run seed               # creates demo agent, contacts, assets, tickets
+cp .env.example .env       # set AUTH_SECRET to anything for local
+npm run seed               # creates teams, accounts, contracts,
+                           # SLA policies, KB articles, ~25 tickets
 npm run dev                # http://localhost:3000
 ```
 
-Sign in with **`agent@lume.dev` / `password`**.
+Sign in:
 
-## What to look at first
+- `agent@lume.dev` / `password` — Sam Rivera (Tier 1)
+- `nora@lume.dev`  / `password` — Nora Park (Tier 1)
+- `lee@lume.dev`   / `password` — Lee Almeida (Tier 2)
 
-1. **Inbox** (`/inbox`). Three filter pills (Open / Pending / Resolved),
-   a scope toggle (All / Mine / Unassigned), and a tight search box.
-   That's it. Status colour, priority chip, last-message snippet,
-   relative time. Overdue rows show red.
-2. **Ticket view** (`/tickets/<number>`). Chat-like thread, Resolve in
-   one click, Magic Draft to draft a reply, side panel for properties.
-   Press `⌘↵` to send.
-3. **Smart Asset Linking**. On any ticket, open the side panel's
-   "Linked asset" row, type to search, pick. The conversation is never
-   crowded.
-4. **Command palette**. Press `⌘K`. Search any ticket, jump to Inbox /
-   Assets, and on a ticket page run "Resolve / Reopen / Mark pending /
-   Assign to me".
-5. **Invisible AI**. POST to the intake endpoint and watch tags appear
-   silently:
+## Surfaces
 
-   ```bash
-   curl -X POST http://localhost:3000/api/intake/email \
-     -H 'content-type: application/json' \
-     -d '{"from":"new@partner.test","from_name":"New User",
-          "subject":"Printer is jamming on every print",
-          "body":"Same printer as before, please help"}'
-   ```
+- `/dashboard` — KPI cards (Open / Pending / Breaching SLA / Negative
+  sentiment / Median first response / CSAT), 14-day queue health,
+  open-by-tier and open-by-team rollups, sentiment heatmap by account.
+- `/inbox` — three-panel workspace. Left rail: views
+  (`All / Mine / Unassigned / Breaching SLA / Negative sentiment` +
+  per-team queues). Centre: compact list with SLA countdown,
+  sentiment face, complexity bar, account chip, tags. Right: the
+  selected ticket renders in-place with the full thread, AI Assist
+  panel, composer, and Customer 360 sidebar.
+- `/tickets/[number]` — same workspace, addressable directly.
+- `/kb` — searchable Knowledge Base (10 seeded articles across 4
+  categories).
+- `/settings` — Teams, SLA policies, members.
+- `⌘K` / `Ctrl K` — palette: ticket search, jumps, and per-ticket
+  actions (Resolve / Reopen / Pending / Assign-to-me / Escalate).
 
-   The new ticket appears in the inbox tagged `hardware` and `bug`.
+## Customer 360
 
-## Project layout
+Per ticket the right column shows:
 
-```
-src/
-  app/
-    layout.tsx, page.tsx, login/page.tsx, globals.css
-    (app)/                       # authed routes — share the chrome
-      layout.tsx                 # auth gate + Shell
-      inbox/page.tsx
-      tickets/[id]/page.tsx
-      assets/page.tsx
-    api/
-      auth/{login,logout,register,me}/route.ts
-      tickets/route.ts                       # list, create
-      tickets/[id]/route.ts                  # get, patch
-      tickets/[id]/messages/route.ts         # post reply / note
-      tickets/[id]/tags/route.ts             # add / remove tag
-      tickets/[id]/draft/route.ts            # Magic Draft
-      tickets/by-number/[number]/route.ts    # palette lookup
-      assets/route.ts                        # list / create
-      agents/route.ts                        # for assignee picker
-      intake/email/route.ts                  # email webhook (JSON)
-      intake/form/route.ts                   # public form submission
-  components/
-    Shell.tsx, CommandPalette.tsx
-    InboxFilters.tsx, InboxRow.tsx
-    TicketView.tsx, Composer.tsx, TicketSidePanel.tsx
-    AssetsView.tsx
-    ui/{Button,Input,Avatar,Kbd}.tsx
-  lib/
-    db.ts                        # sqlite + migrations
-    auth.ts, password.ts         # jose JWT, bcrypt
-    ai.ts                        # magicDraft + autoTag
-    types.ts, validators.ts (zod), utils.ts
-    repo/{tickets,messages,tags,assets,contacts,users}.ts
-scripts/seed.ts                  # the demo dataset
-```
+- Contact card (name, title, email, phone).
+- Account block: tier chip (Gold / Silver / Bronze), health score,
+  MRR, days-to-renewal.
+- Active contracts.
+- Recent tickets for the same account.
+- Properties (status, priority, team, assignee, asset, tags).
+- SLA timestamps (first-response due, resolution due, first-responded).
+
+## SLA timers
+
+Each ticket inherits the SLA policy associated with its account tier
+(Gold = 1h / 4h, Silver = 4h / 8h, Bronze = 8h / 24h). The
+`SLATimer` component renders a live countdown that turns amber at 50%
+budget remaining and red on breach. The same component shows on every
+inbox row in compact form.
+
+## AI surfaces
+
+- **Auto-tag** runs silently on ticket create.
+- **Sentiment** is scored on every message and rolled up onto the
+  ticket as a moving average of the last five non-note messages.
+- **Complexity** scores the thread 0-100.
+- **AI Assist panel** above the composer exposes three actions:
+  - *Draft reply* (account-tier-aware)
+  - *Summarize* the thread
+  - *Detect intent* with confidence + suggested next steps
+
+All AI calls share the provider-agnostic pipeline in `src/lib/ai.ts`.
+Local fallbacks are deterministic so the demo runs without API keys.
+
+## API
+
+- `GET /api/kpi` — dashboard payload.
+- `GET /api/tickets?view=…&q=…` — list with filters; `view` is one
+  of `all|mine|unassigned|breaching|negative|team:<id>`.
+- `GET /api/accounts`, `GET /api/accounts/[id]` — accounts with
+  contracts, contacts, recent tickets.
+- `GET /api/teams`, `GET /api/sla/policies`, `GET /api/articles`.
+- `POST /api/assist/{draft,summarize,intent}` — AI assist; body
+  `{ ticket_id }`.
+- `POST /api/intake/email`, `POST /api/intake/form` — webhook intake.
 
 ## Switching to PostgreSQL
 
-The schema in `src/lib/db.ts` uses only constructs that are valid in both
-SQLite and PostgreSQL with two trivial swaps:
+The schema in `src/lib/db.ts` uses constructs that translate
+directly with three swaps:
 
-- `datetime('now')` → `now()` (or `CURRENT_TIMESTAMP`).
+- `datetime('now')` → `now()`.
 - `INSERT OR IGNORE` → `INSERT … ON CONFLICT DO NOTHING`.
-- `GROUP_CONCAT(x, ',')` (in `repo/tickets.ts`) →
-  `string_agg(x, ',')`.
+- `GROUP_CONCAT(x, ',')` → `string_agg(x, ',')`.
 
-Replace `better-sqlite3` with `pg`, and replace
-`db.prepare(sql).all(...)` with a thin wrapper over `client.query`. None
-of the repository signatures change.
+Replace `better-sqlite3` with `pg`; the repository signatures don't
+change.
 
-## What's intentionally out of scope
+## Out of scope (deferred)
 
-- SMTP/IMAP — intake is JSON webhook only.
-- OAuth provider integration — JWT-only auth; an OAuth callback route is
-  a future-add that mints the same session token.
-- Realtime updates — list and thread refresh on navigation. SSE/WebSocket
-  is a future-add.
-- File attachments — schema can be extended; not in MVP.
-- Multi-tenancy — single workspace.
+- Public customer portal (anonymous self-service).
+- No-code automations engine.
+- Skill-based routing (`users.skills` exists; the routing logic
+  doesn't yet).
+- Multi-tenant org separation.
+- Realtime over WebSocket — SLA timers tick client-side; lists
+  refresh on navigation.
+- File attachments.
 
 ## Scripts
 
-- `npm run dev` — Next.js dev server on :3000.
-- `npm run build` — production build.
-- `npm run start` — production server.
-- `npm run seed` — wipe and re-seed the demo dataset.
-- `npm run typecheck` — `tsc --noEmit`.
-- `npm run lint` — Next's ESLint.
-
-## Demo credentials
-
-- `agent@lume.dev` / `password` — primary agent
-- `nora@lume.dev` / `password` — second agent (for assignee changes)
+- `npm run dev`
+- `npm run build`
+- `npm run seed`
+- `npm run typecheck`
+- `npm run lint`

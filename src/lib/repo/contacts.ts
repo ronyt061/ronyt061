@@ -1,4 +1,5 @@
 import { db, uid } from "../db";
+import { getAccountByDomain } from "./accounts";
 import type { Contact } from "../types";
 
 export function getOrCreateContact(email: string, name?: string | null): Contact {
@@ -13,11 +14,11 @@ export function getOrCreateContact(email: string, name?: string | null): Contact
     return existing;
   }
   const id = uid("c_");
-  db.prepare("INSERT INTO contacts (id, email, name) VALUES (?, ?, ?)").run(
-    id,
-    email.toLowerCase(),
-    name || null
-  );
+  const domain = email.split("@")[1]?.toLowerCase() || "";
+  const account = domain ? getAccountByDomain(domain) : null;
+  db.prepare(
+    "INSERT INTO contacts (id, email, name, account_id) VALUES (?, ?, ?, ?)"
+  ).run(id, email.toLowerCase(), name || null, account?.id || null);
   return db.prepare("SELECT * FROM contacts WHERE id = ?").get(id) as Contact;
 }
 

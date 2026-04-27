@@ -1,74 +1,91 @@
-import Link from "next/link";
-import { listTickets } from "@/lib/repo/tickets";
-import type { TicketStatus } from "@/lib/types";
+import { listTickets, viewCounts, getTicket, getTagsForTicket, recentByAccount } from "@/lib/repo/tickets";
+import { listMessages } from "@/lib/repo/messages";
+import { getContact } from "@/lib/repo/contacts";
+import { getAccount } from "@/lib/repo/accounts";
+import { contractsForAccount } from "@/lib/repo/contracts";
+import { getAsset } from "@/lib/repo/assets";
+import { listTeams } from "@/lib/repo/teams";
+import { listAgents } from "@/lib/repo/users";
 import { getSession } from "@/lib/auth";
-import { InboxFilters } from "@/components/InboxFilters";
-import { InboxRow } from "@/components/InboxRow";
+import type { Customer360RecentTicket } from "@/components/workspace/Customer360";
+import { LeftRail } from "@/components/workspace/LeftRail";
+import { TicketList } from "@/components/workspace/TicketList";
+import { TicketWorkspace } from "@/components/workspace/TicketWorkspace";
+import { InboxSearch } from "@/components/workspace/InboxSearch";
 
 export const dynamic = "force-dynamic";
-
-const STATUSES: TicketStatus[] = ["open", "pending", "resolved"];
 
 export default async function InboxPage({
   searchParams
 }: {
-  searchParams: { status?: string; scope?: string; q?: string };
+  searchParams: { view?: string; q?: string; id?: string; status?: string; account_id?: string };
 }) {
   const user = (await getSession())!;
-  const status = (STATUSES as string[]).includes(searchParams.status || "")
-    ? (searchParams.status as TicketStatus)
-    : "open";
-  const scope = (["all", "mine", "unassigned"] as const).includes((searchParams.scope as any) || "all")
-    ? ((searchParams.scope as any) || "all")
-    : "all";
+  const view = searchParams.view || "all";
   const tickets = listTickets({
-    status,
-    assignee_id: scope === "mine" ? user.id : scope === "unassigned" ? "unassigned" : "any",
-    search: searchParams.q
+    view,
+    user_id: user.id,
+    search: searchParams.q,
+    account_id: searchParams.account_id,
+    limit: 200
   });
+  const counts = viewCounts(user.id);
+
+  const selectedId = searchParams.id || tickets[0]?.id;
+  const selected = selectedId ? getTicket(selectedId) : null;
+  const messages = selected ? listMessages(selected.id) : [];
+  const contact = selected ? getContact(selected.contact_id) : null;
+  const account = selected?.account_id ? getAccount(selected.account_id) : null;
+  const contracts = account ? contractsForAccount(account.id) : [];
+  const recent = (account ? recentByAccount(account.id, 6) : []) as Customer360RecentTicket[];
+  const asset = selected?.asset_id ? getAsset(selected.asset_id) : null;
+  const tags = selected ? getTagsForTicket(selected.id) : [];
+  const teams = listTeams();
+  const agents = listAgents();
 
   return (
-    <>
-      <header className="flex h-14 items-center justify-between border-b border-ink-100 px-6">
-        <h1 className="text-sm font-semibold tracking-tight text-ink-900">Inbox</h1>
-        <div className="text-xs text-ink-400">
-          {tickets.length} {tickets.length === 1 ? "ticket" : "tickets"}
+    <div className="flex h-full">
+      <LeftRail counts={counts} basePath="/inbox" />
+
+      <div className="flex w-[360px] shrink-0 flex-col border-r border-ink-100">
+        <InboxSearch q={searchParams.q || ""} />
+        <div className="flex-1 overflow-y-auto">
+          <TicketList tickets={tickets} basePath="/inbox" />
         </div>
-      </header>
+      </div>
 
-      <InboxFilters status={status} scope={scope} q={searchParams.q || ""} />
-
-      <div className="flex-1 overflow-y-auto">
-        {tickets.length === 0 ? (
-          <Empty status={status} />
+      <div className="flex min-w-0 flex-1 flex-col">
+        {selected && contact ? (
+          <TicketWorkspace
+            ticket={selected}
+            messages={messages}
+            contact={contact}
+            account={account}
+            contracts={contracts}
+            recent={recent}
+            tags={tags}
+            asset={asset}
+            agents={agents}
+            teams={teams}
+          />
         ) : (
-          <ul className="divide-y divide-ink-100">
-            {tickets.map((t) => (
-              <li key={t.id}>
-                <Link href={`/tickets/${t.number}`} className="block">
-                  <InboxRow ticket={t} />
-                </Link>
-              </li>
-            ))}
-          </ul>
+          <EmptyPreview />
         )}
       </div>
-    </>
+    </div>
   );
 }
 
-function Empty({ status }: { status: TicketStatus }) {
-  const lines: Record<TicketStatus, [string, string]> = {
-    open: ["You're all caught up.", "Nothing open. Take a breath."],
-    pending: ["Nothing waiting.", "No tickets are pending a response."],
-    resolved: ["No resolved tickets yet.", "Once you resolve tickets, they'll show up here."]
-  };
-  const [title, sub] = lines[status];
+function EmptyPreview() {
   return (
-    <div className="flex flex-1 flex-col items-center justify-center px-6 py-24 text-center">
-      <div className="mb-3 h-2 w-2 rounded-full bg-emerald-500" />
-      <p className="text-sm font-medium text-ink-900">{title}</p>
-      <p className="mt-1 text-xs text-ink-500">{sub}</p>
+    <div className="flex flex-1 items-center justify-center px-6 text-center">
+      <div>
+        <div className="mx-auto mb-2 h-2 w-2 rounded-full bg-ink-300" />
+        <p className="text-sm font-medium text-ink-900">Select a ticket to preview.</p>
+        <p className="mt-1 text-xs text-ink-500">
+          Use the views on the left or press <kbd className="kbd">⌘K</kbd> to search.
+        </p>
+      </div>
     </div>
   );
 }

@@ -1,24 +1,37 @@
 "use client";
 
-import { useRef, useState } from "react";
-import { Send, Sparkles, MessageSquareDashed, Loader2 } from "lucide-react";
+import { useEffect, useRef, useState } from "react";
+import { Send, MessageSquareDashed } from "lucide-react";
 import type { Contact, Message } from "@/lib/types";
 import { Button } from "@/components/ui/Button";
 import { cn } from "@/lib/utils";
 
 export function Composer({
   ticketId,
-  onSent
+  onSent,
+  initialBody,
+  onConsumeInitial
 }: {
   ticketId: string;
   contact: Contact;
   onSent: (m: Message) => void;
+  initialBody?: string;
+  onConsumeInitial?: () => void;
 }) {
   const [body, setBody] = useState("");
   const [kind, setKind] = useState<"reply" | "note">("reply");
   const [busy, setBusy] = useState(false);
-  const [drafting, setDrafting] = useState(false);
   const ref = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (initialBody && initialBody.length > 0) {
+      setBody(initialBody);
+      setKind("reply");
+      onConsumeInitial?.();
+      setTimeout(() => ref.current?.focus(), 0);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialBody]);
 
   async function send() {
     if (!body.trim() || busy) return;
@@ -35,17 +48,6 @@ export function Composer({
     setBody("");
   }
 
-  async function magicDraft() {
-    setDrafting(true);
-    const res = await fetch(`/api/tickets/${ticketId}/draft`, { method: "POST" });
-    setDrafting(false);
-    if (!res.ok) return;
-    const { draft } = await res.json();
-    setBody(draft);
-    setKind("reply");
-    setTimeout(() => ref.current?.focus(), 0);
-  }
-
   function onKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
     if ((e.metaKey || e.ctrlKey) && e.key === "Enter") {
       e.preventDefault();
@@ -54,9 +56,9 @@ export function Composer({
   }
 
   return (
-    <div className="border-t border-ink-100 bg-white px-6 py-3">
+    <div className="border-t border-ink-100 bg-white px-4 py-3">
       <div className="mx-auto flex w-full max-w-3xl flex-col gap-2">
-        <div className="flex items-center gap-1 text-xs">
+        <div className="flex items-center gap-1 text-[11px]">
           <button
             onClick={() => setKind("reply")}
             className={cn(
@@ -95,15 +97,7 @@ export function Composer({
             className="block w-full resize-none bg-transparent text-sm text-ink-900 placeholder:text-ink-400 focus:outline-none"
           />
           <div className="mt-1 flex items-center justify-between">
-            <button
-              onClick={magicDraft}
-              disabled={drafting}
-              className="inline-flex h-7 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-ink-500 hover:bg-ink-100 hover:text-ink-900 disabled:opacity-60"
-              title="Draft a reply with AI"
-            >
-              {drafting ? <Loader2 size={12} className="animate-spin" /> : <Sparkles size={12} />}
-              Magic Draft
-            </button>
+            <span className="text-[11px] text-ink-400">Use AI Assist above to draft, summarise, or detect intent.</span>
             <div className="flex items-center gap-2 text-[11px] text-ink-400">
               <span className="hidden sm:inline">⌘↵ to send</span>
               <Button size="sm" variant="primary" onClick={send} disabled={busy || !body.trim()}>
