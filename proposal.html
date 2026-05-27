@@ -1,0 +1,666 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Custom GPU Compute Infrastructure Proposal · V-Guard Kochi · Neo Tokyo</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet" />
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'ui-sans-serif', 'system-ui'],
+            display: ['"Space Grotesk"', 'Inter', 'ui-sans-serif'],
+            mono: ['"JetBrains Mono"', 'ui-monospace', 'monospace'],
+          },
+          colors: {
+            canvas:    '#F6F7FB',
+            paper:     '#FFFFFF',
+            ink:       '#0B0D12',
+            sub:       '#5A6072',
+            line:      '#E4E7EE',
+            magenta:   '#FF2D87',
+            electric:  '#1F6BFF',
+            lime:      '#C8FF3B',
+            sun:       '#FFC857',
+          },
+          boxShadow: {
+            card: '0 1px 0 0 rgba(11,13,18,0.04), 0 8px 24px -12px rgba(11,13,18,0.12)',
+            pop:  '0 18px 40px -20px rgba(31,107,255,0.45)',
+          },
+          keyframes: {
+            sweep: {
+              '0%':   { transform: 'translateX(-100%)' },
+              '100%': { transform: 'translateX(200%)' },
+            },
+            ping2: {
+              '0%, 100%': { opacity: '1', transform: 'scale(1)' },
+              '50%':      { opacity: '0.45', transform: 'scale(1.6)' },
+            },
+          },
+          animation: {
+            sweep: 'sweep 2.4s linear infinite',
+            ping2: 'ping2 1.6s ease-in-out infinite',
+          },
+        },
+      },
+    };
+  </script>
+
+  <style>
+    html, body { background: #F6F7FB; }
+    body {
+      font-family: 'Inter', ui-sans-serif, system-ui;
+      color: #0B0D12;
+      -webkit-font-smoothing: antialiased;
+      text-rendering: optimizeLegibility;
+    }
+    .grid-bg {
+      background-image:
+        linear-gradient(to right, rgba(11,13,18,0.06) 1px, transparent 1px),
+        linear-gradient(to bottom, rgba(11,13,18,0.06) 1px, transparent 1px);
+      background-size: 32px 32px;
+      mask-image: radial-gradient(ellipse at top, rgba(0,0,0,0.85), rgba(0,0,0,0) 70%);
+      -webkit-mask-image: radial-gradient(ellipse at top, rgba(0,0,0,0.85), rgba(0,0,0,0) 70%);
+    }
+    .clip-tag {
+      clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 50%, calc(100% - 10px) 100%, 0 100%);
+    }
+    .scrollbar-thin::-webkit-scrollbar { height: 8px; width: 8px; }
+    .scrollbar-thin::-webkit-scrollbar-thumb { background: #D6DAE3; border-radius: 999px; }
+    .scrollbar-thin::-webkit-scrollbar-track { background: transparent; }
+    .neo-stripes {
+      background-image: repeating-linear-gradient(135deg, #0B0D12 0 6px, transparent 6px 12px);
+    }
+  </style>
+
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.min.js"></script>
+</head>
+<body class="min-h-screen">
+  <div id="root"></div>
+
+  <script type="text/babel" data-presets="env,react">
+    const { useState, useMemo, useEffect, useRef } = React;
+
+    // ---- Icon helper (Lucide UMD) ----------------------------------------
+    function Icon({ name, className = "w-4 h-4", strokeWidth = 1.75 }) {
+      const ref = useRef(null);
+      useEffect(() => {
+        if (!ref.current || !window.lucide) return;
+        ref.current.innerHTML = "";
+        const svg = window.lucide.createElement(window.lucide.icons[name] || window.lucide.icons["Circle"]);
+        svg.setAttribute("stroke-width", String(strokeWidth));
+        svg.setAttribute("class", className);
+        ref.current.appendChild(svg);
+      }, [name, className, strokeWidth]);
+      return <span ref={ref} className="inline-flex" aria-hidden="true" />;
+    }
+
+    // ---- Data ------------------------------------------------------------
+    const COMPANY = {
+      name: "Neo Tokyo",
+      tag:  "Compute · Workstations · AI Infrastructure",
+      address: "Floor no. 2, Koroth Arcade, Vennala High School Rd, opposite to V-Guard, Vennala, Kochi, Kerala 682028",
+      phone: "8921824244",
+      gstin: "32AASFN1853C1ZF",
+      validity: "Quote validity — 7 days. Prices are subject to market price changes.",
+    };
+
+    const CLIENT = {
+      name: "V-Guard Industries Ltd.",
+      city: "Kochi, Kerala",
+      proposalId: "NT-VG-GPU-0527",
+      issued: "27 May 2026",
+    };
+
+    const SPECS = [
+      { id: "cpu",   group: "Compute",  part: "Processor",    model: "AMD Epyc 9275F Server Processor 24C 4.1GHz",
+        useCase: "High-frequency server compute", qty: 1, warranty: "3 yr", icon: "Cpu" },
+      { id: "mb",    group: "Compute",  part: "Motherboard",  model: "Asus K14PA-U12 (12-DIMM, 2× SFP28 25G, 3-Way GPU)",
+        useCase: "Server-grade platform, 3× GPU ready", qty: 1, warranty: "3 yr", icon: "CircuitBoard" },
+      { id: "cool",  group: "Compute",  part: "Cooler",       model: "Dynatron Server Grade Liquid Cooler",
+        useCase: "Sustained TDP under AI workloads", qty: 1, warranty: "1 yr", icon: "Snowflake" },
+      { id: "ram",   group: "Compute",  part: "Memory (256GB)", model: "64GB DDR5 4800 MT/s RDIMM ECC (64GB × 4)",
+        useCase: "Large in-memory datasets, ECC integrity", qty: 4, warranty: "Lifetime", icon: "MemoryStick" },
+
+      { id: "ssdb",  group: "Storage",  part: "SSD — Boot",   model: "KIOXIA Exceria Plus 1TB NVMe PCIe 5.0 M.2",
+        useCase: "OS + hypervisor boot volume", qty: 1, warranty: "5 yr", icon: "HardDrive" },
+      { id: "ssd",   group: "Storage",  part: "SSD (6TB)",    model: "3.2TB WD Enterprise NVMe Mixed Performance",
+        useCase: "AI / ML hot dataset tier", qty: 2, warranty: "3 yr", icon: "Database" },
+      { id: "riser", group: "Storage",  part: "HBA / Riser",  model: "MCIO to NVMe Riser",
+        useCase: "Direct-attach NVMe expansion", qty: 1, warranty: "1 yr", icon: "Cable" },
+
+      { id: "gpu",   group: "GPU",      part: "Graphics Card", model: "Nvidia RTX Pro 6000 Blackwell 96GB GDDR7 512-Bit Server Edition 600W",
+        useCase: "LLM inference, training, CUDA workloads", qty: 1, warranty: "3 yr", icon: "Zap" },
+
+      { id: "case",  group: "Chassis",  part: "Chassis",      model: "4U Server Chassis with 2000W RPS",
+        useCase: "Rack-mount, redundant power", qty: 1, warranty: "2 yr", icon: "Server" },
+      { id: "acc",   group: "Chassis",  part: "Accessories",  model: "Hardware Kit",
+        useCase: "Rails, screws, cabling, thermal kit", qty: 1, warranty: "—", icon: "Wrench" },
+
+      { id: "svc",   group: "Service",  part: "Service",      model: "Standard Labour + 1 yr Onsite Assistance + Initial Configuration",
+        useCase: "Deployment, tuning, post-install support", qty: 1, warranty: "1 yr onsite", icon: "LifeBuoy" },
+    ];
+
+    const GROUPS = ["All", "Compute", "Storage", "GPU", "Chassis", "Service"];
+
+    const FINANCIALS = {
+      subtotal: 3496975,
+      grandTotal: 4126431,
+    };
+    const tax = FINANCIALS.grandTotal - FINANCIALS.subtotal;
+    const taxRate = (tax / FINANCIALS.subtotal) * 100;
+
+    const inr = (n) =>
+      new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 0 }).format(n);
+
+    // ---- Small UI atoms --------------------------------------------------
+    const Pill = ({ children, tone = "ink" }) => {
+      const tones = {
+        ink:      "bg-ink text-white",
+        magenta:  "bg-magenta text-white",
+        electric: "bg-electric text-white",
+        lime:     "bg-lime text-ink",
+        line:     "bg-white text-ink border border-line",
+      };
+      return (
+        <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.14em] rounded-sm ${tones[tone]}`}>
+          {children}
+        </span>
+      );
+    };
+
+    const SectionLabel = ({ index, label }) => (
+      <div className="flex items-center gap-3 mb-6">
+        <span className="font-mono text-xs text-sub">{index}</span>
+        <span className="h-px flex-1 bg-line" />
+        <span className="font-display text-xs uppercase tracking-[0.28em] text-ink">{label}</span>
+      </div>
+    );
+
+    // ---- Header ----------------------------------------------------------
+    const Header = () => (
+      <header className="relative overflow-hidden border-b border-line bg-paper">
+        <div className="absolute inset-0 grid-bg pointer-events-none" />
+        <div className="absolute -top-24 -right-24 w-[420px] h-[420px] rounded-full bg-magenta/10 blur-3xl pointer-events-none" />
+        <div className="absolute -top-10 left-1/3 w-[320px] h-[320px] rounded-full bg-electric/10 blur-3xl pointer-events-none" />
+
+        <div className="relative max-w-7xl mx-auto px-6 lg:px-10 py-5 flex items-center justify-between border-b border-line/70">
+          <div className="flex items-center gap-3">
+            <div className="w-9 h-9 grid place-items-center bg-ink text-lime font-display font-bold text-lg rounded-sm">N</div>
+            <div className="leading-tight">
+              <div className="font-display font-bold tracking-tight">NEO&nbsp;TOKYO</div>
+              <div className="text-[11px] text-sub font-mono">{COMPANY.tag}</div>
+            </div>
+          </div>
+          <div className="hidden md:flex items-center gap-2">
+            <Pill tone="line"><span className="w-1.5 h-1.5 rounded-full bg-lime animate-ping2" /> Quote · Live</Pill>
+            <Pill tone="line"><Icon name="FileText" className="w-3 h-3" /> {CLIENT.proposalId}</Pill>
+          </div>
+        </div>
+
+        <div className="relative max-w-7xl mx-auto px-6 lg:px-10 pt-14 pb-20">
+          <div className="flex items-center gap-2 mb-6">
+            <Pill tone="magenta">Proposal · 2026</Pill>
+            <Pill tone="line"><Icon name="MapPin" className="w-3 h-3" /> Vennala, Kochi</Pill>
+            <Pill tone="line"><Icon name="Calendar" className="w-3 h-3" /> {CLIENT.issued}</Pill>
+          </div>
+
+          <h1 className="font-display font-bold tracking-tight text-ink text-4xl md:text-6xl lg:text-7xl leading-[1.02] max-w-5xl">
+            Custom GPU Compute<br />
+            Infrastructure <span className="text-magenta">Proposal</span>
+          </h1>
+
+          <p className="mt-6 max-w-2xl text-sub text-lg">
+            Prepared for <span className="text-ink font-semibold">{CLIENT.name}</span> · {CLIENT.city} —
+            a single-node, AI-ready 4U platform built around the Nvidia RTX Pro 6000 Blackwell and AMD Epyc 9275F.
+          </p>
+
+          <div className="mt-10 grid grid-cols-2 md:grid-cols-4 gap-px bg-line rounded-sm overflow-hidden border border-line">
+            {[
+              { k: "PRIMARY GPU", v: "RTX Pro 6000",  s: "96GB GDDR7 · 600W" },
+              { k: "CPU",         v: "Epyc 9275F",     s: "24C · 4.1 GHz" },
+              { k: "MEMORY",      v: "256 GB DDR5",    s: "ECC · 4800 MT/s" },
+              { k: "STORAGE",     v: "7 TB NVMe",      s: "1 TB boot + 6 TB" },
+            ].map((c) => (
+              <div key={c.k} className="bg-paper px-5 py-4">
+                <div className="font-mono text-[11px] uppercase tracking-[0.18em] text-sub">{c.k}</div>
+                <div className="mt-1 font-display font-semibold text-ink text-xl">{c.v}</div>
+                <div className="text-xs text-sub mt-0.5">{c.s}</div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </header>
+    );
+
+    // ---- Parties block ---------------------------------------------------
+    const Parties = () => (
+      <section className="max-w-7xl mx-auto px-6 lg:px-10 -mt-12 relative z-10">
+        <div className="grid md:grid-cols-2 gap-4">
+          <div className="bg-paper border border-line rounded-sm shadow-card p-6">
+            <div className="flex items-center justify-between">
+              <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-sub">From</div>
+              <Pill tone="ink">Vendor</Pill>
+            </div>
+            <div className="mt-3 font-display text-2xl font-bold text-ink">{COMPANY.name}</div>
+            <div className="mt-1 text-sm text-sub">{COMPANY.address}</div>
+            <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+              <div className="flex items-center gap-2 text-ink"><Icon name="Phone" className="w-3.5 h-3.5 text-magenta" /> {COMPANY.phone}</div>
+              <div className="flex items-center gap-2 text-ink"><Icon name="Receipt" className="w-3.5 h-3.5 text-electric" /> GSTIN {COMPANY.gstin}</div>
+            </div>
+          </div>
+
+          <div className="bg-paper border border-line rounded-sm shadow-card p-6 relative overflow-hidden">
+            <div className="absolute top-0 right-0 h-full w-2 neo-stripes opacity-80" />
+            <div className="flex items-center justify-between">
+              <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-sub">To</div>
+              <Pill tone="magenta">Client</Pill>
+            </div>
+            <div className="mt-3 font-display text-2xl font-bold text-ink">{CLIENT.name}</div>
+            <div className="mt-1 text-sm text-sub">{CLIENT.city} · directly opposite our office on Vennala High School Rd.</div>
+            <div className="mt-4 flex flex-wrap gap-x-6 gap-y-2 text-sm">
+              <div className="flex items-center gap-2 text-ink"><Icon name="Hash" className="w-3.5 h-3.5 text-magenta" /> {CLIENT.proposalId}</div>
+              <div className="flex items-center gap-2 text-ink"><Icon name="Clock" className="w-3.5 h-3.5 text-electric" /> Valid for 7 days</div>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+
+    // ---- Spec Viewer -----------------------------------------------------
+    const SpecViewer = () => {
+      const [tab, setTab] = useState("All");
+      const [view, setView] = useState("table"); // 'table' | 'cards'
+      const [active, setActive] = useState(null);
+
+      const counts = useMemo(() => {
+        const m = { All: SPECS.length };
+        SPECS.forEach((s) => { m[s.group] = (m[s.group] || 0) + 1; });
+        return m;
+      }, []);
+
+      const rows = useMemo(
+        () => (tab === "All" ? SPECS : SPECS.filter((s) => s.group === tab)),
+        [tab]
+      );
+
+      const totalUnits = rows.reduce((a, b) => a + b.qty, 0);
+
+      return (
+        <section id="specs" className="max-w-7xl mx-auto px-6 lg:px-10 mt-20">
+          <SectionLabel index="01 / 03" label="Bill of Materials" />
+
+          <div className="flex flex-col lg:flex-row lg:items-end lg:justify-between gap-6 mb-8">
+            <div>
+              <h2 className="font-display text-3xl md:text-4xl font-bold text-ink tracking-tight">
+                Dynamic Spec Viewer
+              </h2>
+              <p className="mt-2 text-sub max-w-2xl">
+                Every component, its intended workload, and warranty terms.
+                Filter by subsystem or toggle between a detailed table and component cards.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 self-start lg:self-end">
+              <div className="inline-flex border border-line rounded-sm bg-paper p-0.5">
+                {[
+                  { k: "table", label: "Table", icon: "Table2" },
+                  { k: "cards", label: "Cards", icon: "LayoutGrid" },
+                ].map((v) => (
+                  <button
+                    key={v.k}
+                    onClick={() => setView(v.k)}
+                    className={`px-3 py-1.5 text-xs font-semibold inline-flex items-center gap-1.5 rounded-sm transition-colors ${
+                      view === v.k ? "bg-ink text-white" : "text-sub hover:text-ink"
+                    }`}
+                  >
+                    <Icon name={v.icon} className="w-3.5 h-3.5" /> {v.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div className="border-b border-line overflow-x-auto scrollbar-thin">
+            <div className="flex items-end gap-1 min-w-max">
+              {GROUPS.map((g) => {
+                const isActive = tab === g;
+                return (
+                  <button
+                    key={g}
+                    onClick={() => setTab(g)}
+                    className={`group relative px-4 py-3 text-sm font-semibold inline-flex items-center gap-2 transition-colors ${
+                      isActive ? "text-ink" : "text-sub hover:text-ink"
+                    }`}
+                  >
+                    {g}
+                    <span className={`text-[10px] font-mono px-1.5 py-0.5 rounded-sm ${
+                      isActive ? "bg-magenta text-white" : "bg-canvas text-sub"
+                    }`}>{counts[g] ?? 0}</span>
+                    <span className={`absolute left-0 right-0 -bottom-px h-0.5 ${isActive ? "bg-ink" : "bg-transparent"}`} />
+                  </button>
+                );
+              })}
+              <div className="ml-auto hidden md:flex items-center gap-2 pr-2 pb-2 text-xs text-sub font-mono">
+                <span>{rows.length} items</span><span>·</span><span>{totalUnits} units</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Table view */}
+          {view === "table" && (
+            <div className="mt-6 bg-paper border border-line rounded-sm shadow-card overflow-hidden">
+              <div className="overflow-x-auto scrollbar-thin">
+                <table className="w-full text-left">
+                  <thead className="bg-canvas border-b border-line">
+                    <tr className="text-[11px] uppercase tracking-[0.18em] font-semibold text-sub">
+                      <th className="px-5 py-3 w-12">#</th>
+                      <th className="px-5 py-3">Part</th>
+                      <th className="px-5 py-3">Model</th>
+                      <th className="px-5 py-3">Use Case</th>
+                      <th className="px-5 py-3 text-center">Qty</th>
+                      <th className="px-5 py-3">Warranty</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r, i) => {
+                      const isActive = active === r.id;
+                      return (
+                        <tr
+                          key={r.id}
+                          onClick={() => setActive(isActive ? null : r.id)}
+                          className={`border-b border-line/70 last:border-0 cursor-pointer transition-colors ${
+                            isActive ? "bg-magenta/[0.04]" : "hover:bg-canvas"
+                          }`}
+                        >
+                          <td className="px-5 py-4 font-mono text-xs text-sub">{String(i + 1).padStart(2, "0")}</td>
+                          <td className="px-5 py-4">
+                            <div className="flex items-center gap-3">
+                              <span className={`grid place-items-center w-9 h-9 rounded-sm border ${
+                                isActive ? "bg-ink text-lime border-ink" : "bg-canvas text-ink border-line"
+                              }`}>
+                                <Icon name={r.icon} className="w-4 h-4" />
+                              </span>
+                              <div>
+                                <div className="font-semibold text-ink leading-tight">{r.part}</div>
+                                <div className="text-[11px] uppercase tracking-[0.16em] text-sub font-mono mt-0.5">{r.group}</div>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-5 py-4 text-sm text-ink max-w-md">{r.model}</td>
+                          <td className="px-5 py-4 text-sm text-sub">{r.useCase}</td>
+                          <td className="px-5 py-4 text-center">
+                            <span className="inline-flex items-center justify-center min-w-[36px] px-2 py-0.5 font-mono text-sm font-semibold text-ink bg-lime/60 rounded-sm">×{r.qty}</span>
+                          </td>
+                          <td className="px-5 py-4 text-sm font-mono text-ink">{r.warranty}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {/* Card view */}
+          {view === "cards" && (
+            <div className="mt-6 grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {rows.map((r) => (
+                <div
+                  key={r.id}
+                  onClick={() => setActive(active === r.id ? null : r.id)}
+                  className={`group relative bg-paper border rounded-sm p-5 cursor-pointer overflow-hidden transition-all ${
+                    active === r.id ? "border-ink shadow-pop" : "border-line shadow-card hover:-translate-y-0.5 hover:border-ink/60"
+                  }`}
+                >
+                  <div className="flex items-start justify-between">
+                    <span className="grid place-items-center w-10 h-10 rounded-sm bg-canvas border border-line text-ink">
+                      <Icon name={r.icon} className="w-5 h-5" />
+                    </span>
+                    <Pill tone="line">{r.group}</Pill>
+                  </div>
+                  <div className="mt-4 font-display font-semibold text-ink text-lg leading-tight">{r.part}</div>
+                  <div className="mt-1 text-sm text-sub leading-snug">{r.model}</div>
+
+                  <div className="mt-5 pt-4 border-t border-line/80 flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-1.5 text-sub"><Icon name="Target" className="w-3 h-3" />{r.useCase}</div>
+                  </div>
+                  <div className="mt-3 flex items-center justify-between">
+                    <span className="font-mono text-xs text-sub">QTY</span>
+                    <span className="font-mono text-sm font-semibold text-ink bg-lime/60 px-2 py-0.5 rounded-sm">×{r.qty}</span>
+                    <span className="font-mono text-xs text-sub">WAR</span>
+                    <span className="font-mono text-sm font-semibold text-ink">{r.warranty}</span>
+                  </div>
+
+                  <div className="absolute -bottom-px left-0 right-0 h-px overflow-hidden">
+                    <div className="h-full w-1/3 bg-magenta animate-sweep" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      );
+    };
+
+    // ---- Workload / value section ----------------------------------------
+    const Workload = () => (
+      <section className="max-w-7xl mx-auto px-6 lg:px-10 mt-24">
+        <SectionLabel index="02 / 03" label="Why this build" />
+        <div className="grid lg:grid-cols-3 gap-4">
+          {[
+            { icon: "BrainCircuit", title: "Local LLM inference",
+              body: "96 GB of GDDR7 on a single Blackwell card runs 70B-class quantized models locally — no cloud egress, no per-token billing." },
+            { icon: "Layers",       title: "Training & fine-tunes",
+              body: "PCIe 5.0 + MCIO NVMe risers keep dataset I/O off the bottleneck path so the GPU stays saturated during long fine-tune runs." },
+            { icon: "ShieldCheck",  title: "Enterprise reliability",
+              body: "ECC RDIMM memory, 2000W RPS, server-grade liquid cooling and 1 year onsite assistance from a vendor across the road." },
+          ].map((c) => (
+            <div key={c.title} className="relative bg-paper border border-line rounded-sm p-6 shadow-card group hover:-translate-y-0.5 transition-transform">
+              <span className="grid place-items-center w-10 h-10 rounded-sm bg-ink text-lime"><Icon name={c.icon} className="w-5 h-5" /></span>
+              <div className="mt-4 font-display text-xl font-semibold text-ink">{c.title}</div>
+              <p className="mt-2 text-sub text-sm leading-relaxed">{c.body}</p>
+              <div className="absolute top-4 right-4 font-mono text-[11px] text-sub opacity-60 group-hover:text-magenta transition-colors">{c.icon.toUpperCase()}</div>
+            </div>
+          ))}
+        </div>
+      </section>
+    );
+
+    // ---- Financials ------------------------------------------------------
+    const Financials = () => (
+      <section id="financials" className="max-w-7xl mx-auto px-6 lg:px-10 mt-24">
+        <SectionLabel index="03 / 03" label="Financials" />
+        <div className="grid lg:grid-cols-5 gap-4">
+          <div className="lg:col-span-3 bg-paper border border-line rounded-sm shadow-card p-6 md:p-8">
+            <div className="flex items-center justify-between">
+              <h3 className="font-display text-2xl font-bold text-ink">Pricing breakdown</h3>
+              <Pill tone="line"><Icon name="IndianRupee" className="w-3 h-3" /> INR</Pill>
+            </div>
+
+            <dl className="mt-6 divide-y divide-line">
+              <div className="flex items-center justify-between py-4">
+                <dt className="text-sub">Hardware &amp; service subtotal</dt>
+                <dd className="font-mono text-ink font-semibold text-lg">{inr(FINANCIALS.subtotal)}</dd>
+              </div>
+              <div className="flex items-center justify-between py-4">
+                <dt className="text-sub">GST &amp; applicable taxes <span className="font-mono text-xs text-sub/80">({taxRate.toFixed(0)}%)</span></dt>
+                <dd className="font-mono text-ink font-semibold text-lg">{inr(tax)}</dd>
+              </div>
+              <div className="flex items-center justify-between py-5 bg-canvas -mx-6 md:-mx-8 px-6 md:px-8 mt-2 border-y border-line">
+                <dt className="font-display text-ink font-semibold text-lg">Grand Total <span className="text-sub text-xs font-mono ml-1">(incl. all taxes)</span></dt>
+                <dd className="font-display text-magenta font-bold text-2xl">{inr(FINANCIALS.grandTotal)}</dd>
+              </div>
+            </dl>
+
+            <div className="mt-6 text-xs text-sub leading-relaxed border-l-2 border-magenta pl-3">
+              {COMPANY.validity}
+            </div>
+          </div>
+
+          <div className="lg:col-span-2 bg-ink text-white rounded-sm p-6 md:p-8 relative overflow-hidden">
+            <div className="absolute -top-10 -right-10 w-48 h-48 rounded-full bg-magenta/40 blur-2xl" />
+            <div className="absolute -bottom-10 -left-10 w-48 h-48 rounded-full bg-electric/30 blur-2xl" />
+            <div className="relative">
+              <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-white/60">Includes</div>
+              <h3 className="mt-2 font-display text-2xl font-bold">Everything you need to power on, day one.</h3>
+              <ul className="mt-5 space-y-3 text-sm">
+                {[
+                  "Free delivery within Kochi metro",
+                  "Initial OS + driver configuration",
+                  "1 year onsite hardware assistance",
+                  "Burn-in & stability test report",
+                  "Replacement RMA coordination",
+                ].map((l) => (
+                  <li key={l} className="flex items-start gap-2">
+                    <Icon name="Check" className="w-4 h-4 text-lime mt-0.5" />
+                    <span className="text-white/90">{l}</span>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+    );
+
+    // ---- Footer ----------------------------------------------------------
+    const Footer = () => (
+      <footer className="mt-24 border-t border-line bg-paper">
+        <div className="max-w-7xl mx-auto px-6 lg:px-10 py-10 grid md:grid-cols-3 gap-8">
+          <div>
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 grid place-items-center bg-ink text-lime font-display font-bold rounded-sm">N</div>
+              <div className="font-display font-bold tracking-tight">NEO TOKYO</div>
+            </div>
+            <p className="mt-4 text-sm text-sub leading-relaxed">{COMPANY.address}</p>
+          </div>
+          <div className="space-y-1.5 text-sm">
+            <div className="font-mono text-[11px] uppercase tracking-[0.18em] text-sub mb-2">Contact</div>
+            <div className="flex items-center gap-2 text-ink"><Icon name="Phone" className="w-3.5 h-3.5 text-magenta" /> {COMPANY.phone}</div>
+            <div className="flex items-center gap-2 text-ink"><Icon name="Receipt" className="w-3.5 h-3.5 text-electric" /> GSTIN {COMPANY.gstin}</div>
+          </div>
+          <div className="space-y-1.5 text-sm">
+            <div className="font-mono text-[11px] uppercase tracking-[0.18em] text-sub mb-2">Terms</div>
+            <div className="text-sub">Quote validity — 7 days.</div>
+            <div className="text-sub">Prices are subject to market price changes.</div>
+            <div className="text-sub">All taxes included in Grand Total.</div>
+          </div>
+        </div>
+        <div className="border-t border-line">
+          <div className="max-w-7xl mx-auto px-6 lg:px-10 py-4 flex items-center justify-between text-xs text-sub">
+            <span className="font-mono">© 2026 Neo Tokyo · {CLIENT.proposalId}</span>
+            <span className="font-mono">Designed in Vennala. Compiled with care.</span>
+          </div>
+        </div>
+      </footer>
+    );
+
+    // ---- Sticky action bar -----------------------------------------------
+    const StickyBar = ({ onApprove }) => (
+      <div className="fixed inset-x-0 bottom-0 z-40">
+        <div className="max-w-7xl mx-auto px-3 md:px-6 lg:px-10 pb-3 md:pb-5">
+          <div className="bg-ink text-white rounded-sm shadow-pop border border-ink/40 overflow-hidden">
+            <div className="flex flex-col md:flex-row items-stretch">
+              <div className="hidden md:flex items-center px-5 py-3 border-r border-white/10">
+                <span className="w-2 h-2 rounded-full bg-lime animate-ping2 mr-3" />
+                <div>
+                  <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/60">Status</div>
+                  <div className="text-xs font-semibold">Awaiting approval</div>
+                </div>
+              </div>
+
+              <div className="flex-1 grid grid-cols-2 md:grid-cols-3">
+                <div className="px-4 md:px-5 py-3 border-r border-white/10">
+                  <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/60">Subtotal</div>
+                  <div className="font-mono text-sm md:text-base font-semibold">{inr(FINANCIALS.subtotal)}</div>
+                </div>
+                <div className="px-4 md:px-5 py-3 md:border-r border-white/10">
+                  <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/60">Taxes</div>
+                  <div className="font-mono text-sm md:text-base font-semibold">{inr(tax)}</div>
+                </div>
+                <div className="col-span-2 md:col-span-1 px-4 md:px-5 py-3 bg-white/[0.03] border-t md:border-t-0 border-white/10">
+                  <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/60">Grand Total · incl. tax</div>
+                  <div className="font-display text-lg md:text-xl font-bold text-lime">{inr(FINANCIALS.grandTotal)}</div>
+                </div>
+              </div>
+
+              <button
+                onClick={onApprove}
+                className="group relative px-6 py-4 md:py-0 md:px-8 bg-magenta hover:bg-magenta/90 text-white font-display font-semibold tracking-tight inline-flex items-center justify-center gap-2 transition-colors"
+              >
+                <span>Approve Proposal</span>
+                <Icon name="ArrowRight" className="w-4 h-4 group-hover:translate-x-0.5 transition-transform" />
+                <span className="absolute inset-y-0 left-0 w-1 bg-lime" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+
+    // ---- Approval modal --------------------------------------------------
+    const ApprovalModal = ({ open, onClose }) => {
+      if (!open) return null;
+      return (
+        <div className="fixed inset-0 z-50 grid place-items-center px-4">
+          <div className="absolute inset-0 bg-ink/60 backdrop-blur-sm" onClick={onClose} />
+          <div className="relative w-full max-w-md bg-paper border border-line rounded-sm shadow-pop overflow-hidden">
+            <div className="absolute top-0 left-0 right-0 h-1 neo-stripes opacity-90" />
+            <div className="p-6 md:p-8">
+              <div className="flex items-center gap-2">
+                <span className="grid place-items-center w-10 h-10 rounded-sm bg-lime text-ink"><Icon name="Check" className="w-5 h-5" strokeWidth={2.25} /></span>
+                <div>
+                  <div className="font-mono text-[11px] uppercase tracking-[0.2em] text-sub">Approval recorded</div>
+                  <div className="font-display text-xl font-bold text-ink">Thank you, V-Guard.</div>
+                </div>
+              </div>
+              <p className="mt-4 text-sm text-sub leading-relaxed">
+                Neo Tokyo will reach out within 24 hours with a confirmed delivery window,
+                payment instructions and a hardware lead-time schedule. Reference&nbsp;
+                <span className="font-mono text-ink">{CLIENT.proposalId}</span>.
+              </p>
+              <div className="mt-6 flex items-center justify-end gap-2">
+                <button onClick={onClose} className="px-4 py-2 text-sm font-semibold text-sub hover:text-ink transition-colors">Close</button>
+                <button onClick={onClose} className="px-4 py-2 text-sm font-semibold bg-ink text-white hover:bg-ink/90 transition-colors rounded-sm inline-flex items-center gap-1.5">
+                  <Icon name="Mail" className="w-3.5 h-3.5" /> Email confirmation
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    };
+
+    // ---- App -------------------------------------------------------------
+    function App() {
+      const [open, setOpen] = useState(false);
+      return (
+        <div className="pb-40">
+          <Header />
+          <Parties />
+          <SpecViewer />
+          <Workload />
+          <Financials />
+          <Footer />
+          <StickyBar onApprove={() => setOpen(true)} />
+          <ApprovalModal open={open} onClose={() => setOpen(false)} />
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+  </script>
+</body>
+</html>
